@@ -3,7 +3,7 @@ from .models import User, Organisation
 from django.contrib.auth.hashers import make_password
 
 
-class UserSerializer(serializers.ModelSerializer):
+class CreateUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['userId', 'first_name', 'last_name', 'email', 'password', 'phone']
@@ -12,6 +12,13 @@ class UserSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data['password'] = make_password(validated_data['password'])
         return super().create(validated_data)
+
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['userId', 'first_name', 'last_name', 'email', 'phone']
+
 
 class UserLoginSerializer(serializers.ModelSerializer):
     class Meta:
@@ -23,3 +30,7 @@ class OrganisationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Organisation
         fields = ['orgId', 'name', 'description']
+
+
+class AddUserToOrganisationSerializer(serializers.Serializer):
+    userId = serializers.CharField(max_length=255)

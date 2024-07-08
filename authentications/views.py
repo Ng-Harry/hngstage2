@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User, Organisation
-from .serializers import UserSerializer, OrganisationSerializer, UserLoginSerializer
+from .serializers import CreateUserSerializer, OrganisationSerializer, UserLoginSerializer, UserSerializer, AddUserToOrganisationSerializer
 from django.db import IntegrityError
 from drf_spectacular.utils import extend_schema
 from django.contrib.auth.hashers import make_password
@@ -12,11 +12,11 @@ from django.contrib.auth.hashers import make_password
 
 
 @extend_schema(
-    request=UserSerializer,
+    request=CreateUserSerializer,
     tags=["Auth"],
 )
 class RegisterView(generics.CreateAPIView):
-    serializer_class = UserSerializer
+    serializer_class = CreateUserSerializer
 
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -47,9 +47,9 @@ class RegisterView(generics.CreateAPIView):
         return Response({
             "status": "Bad request",
             "message": "Registration unsuccessful",
-            "statusCode": 422,
+            "statusCode": 400,
             "errors": serializer.errors
-        }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        }, status=status.HTTP_400_BAD_REQUEST)
 
 @extend_schema(
     request=UserLoginSerializer,
@@ -94,10 +94,19 @@ class UserDetailView(generics.RetrieveAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
+    lookup_field = 'userId'
 
-    def get_object(self):
-        user = self.request.user
-        return user
+    def get(self, request, *args, **kwargs):
+
+        user = self.get_object() 
+        serializer = self.get_serializer(user)
+
+        return Response({
+            "status": "success",
+            "message": "User details retrieved",
+            "data": serializer.data
+        }, status=status.HTTP_200_OK)
+
 
 @extend_schema(
     request=OrganisationSerializer,
@@ -110,17 +119,48 @@ class OrganisationListView(generics.ListAPIView):
     def get_queryset(self):
         return self.request.user.organisations.all()
 
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+
+        response_data = {
+            "status": "success",
+            "message": "Your organisations details retrieved successfully",
+            "data": {
+                "organisations": serializer.data
+            }
+        }
+        return Response(response_data, status=status.HTTP_200_OK)
+
+
 @extend_schema(
     request=OrganisationSerializer,
     tags=["Organization"],
 )
 class OrganisationDetailView(generics.RetrieveAPIView):
-    queryset = Organisation.objects.all()
     serializer_class = OrganisationSerializer
     permission_classes = [IsAuthenticated]
+    lookup_field = 'orgId'
 
     def get_queryset(self):
         return self.request.user.organisations.all()
+
+    def retrieve(self, request, *args, **kwargs):
+        org = self.get_object()
+
+        response_data = {
+            "status": "success",
+            "message": "Organisation details retrieved successfully",
+            "data": {
+                "organisation": {
+                    "orgId": org.orgId,
+                    "name": org.name,
+                    "description": org.description,
+                }
+            }
+        }
+        return Response(response_data, status=status.HTTP_200_OK)
+
 
 @extend_schema(
     request=OrganisationSerializer,
@@ -133,38 +173,57 @@ class OrganisationCreateView(generics.CreateAPIView):
     def perform_create(self, serializer):
         serializer.save(users=[self.request.user])
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+
+        response_data = {
+            "status": "success",
+            "message": "Organisation created successfully",
+            "data": {
+                "orgId": serializer.data.get('orgId'),
+                "name": serializer.data.get('name'),
+                "description": serializer.data.get('description')
+            }
+        }
+
+        return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
+
+
 @extend_schema(
-    request=OrganisationSerializer,
+    request=AddUserToOrganisationSerializer,
     tags=["Organization"],
 )
 class AddUserToOrganisationView(generics.GenericAPIView):
+    serializer_class = AddUserToOrganisationSerializer
     permission_classes = [IsAuthenticated]
 
-    def post(self, request, orgId, *args, **kwargs):
+    def post(self, request, orgId):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user_id = serializer.validated_data['userId']
+
         try:
-            organisation = Organisation.objects.get(orgId=orgId, users=request.user)
-            user_id = request.data.get('userId')
+            organisation = Organisation.objects.get(orgId=orgId)
             user = User.objects.get(userId=user_id)
+
             organisation.users.add(user)
             return Response({
                 "status": "success",
                 "message": "User added to organisation successfully",
             }, status=status.HTTP_200_OK)
+
         except Organisation.DoesNotExist:
             return Response({
-                "status": "Bad Request",
-                "message": "Organisation not found or you don't have access",
-                "statusCode": 400
-            }, status=status.HTTP_400_BAD_REQUEST)
+                "status": "error",
+                "message": "Organisation not found",
+            }, status=status.HTTP_404_NOT_FOUND)
+        
         except User.DoesNotExist:
             return Response({
-                "status": "Bad Request",
+                "status": "error",
                 "message": "User not found",
-                "statusCode": 400
-            }, status=status.HTTP_400_BAD_REQUEST)
-        except IntegrityError:
-            return Response({
-                "status": "Bad Request",
-                "message": "User already belongs to the organisation",
-                "statusCode": 400
-            }, status=status.HTTP_400_BAD_REQUEST)
+            }, status=status.HTTP_404_NOT_FOUND)
