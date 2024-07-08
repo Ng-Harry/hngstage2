@@ -1,0 +1,11 @@
+Django
+djangorestframework
+djangorestframework-simplejwt
+drf-spectacular
+django-crontab
+jsonschema
+jsonschema-specifications
+phonenumbers
+pillow
+postgrest
+psycopg2-binary
